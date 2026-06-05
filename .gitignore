@@ -1,77 +1,93 @@
-2
-### gradle ###
-.gradle
-/build/
-!gradle/wrapper/gradle-wrapper.jar
+target/
+bin/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+.flattened-pom.xml
+.fastRequest
 
 ### STS ###
-.settings/
 .apt_generated
 .classpath
 .factorypath
 .project
 .settings
 .springBeans
-bin/
-codes/
+.sts4-cache
+rebel.xml
 
 ### IntelliJ IDEA ###
 .idea
 *.iws
 *.iml
 *.ipr
-*.gz
-rebel.xml
 
 ### NetBeans ###
-nbproject/private/
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
 build/
-nbbuild/
-dist/
-nbdist/
-.nb-gradle/
-log.*/
+bin/
+!**/src/main/**/build/
+!**/src/test/**/build/
 
-### maven ###
-target/
-*.war
-*.ear
-*.tar
-#*.zip
-*.tar.gz
+### VS Code ###
+.vscode/
+.claude/
 
-### logs ####
-/logs/
-*.log
-
-### temp ignore ###
-*.cache
-*.diff
-*.patch
-*.tmp
-*.java~
-*.properties~
-*.xml~
-
-### system ignore ###
+### Mac OS ###
 .DS_Store
-Thumbs.db
-Servers
-.metadata
-upload
-gen_code
 
-### node ###
-node_modules
-pom.xml.versionsBackup
-/server/nacos-server/data
-/server/nacos-server/logs
-!/libs/*.jar
-
-.fastRequest
-*.http
-*.json
 .flattened-pom.xml
-/agentdb.rvf
-/agentdb.rvf.lock
-/ruvector.db
+**/dependency-reduced-pom.xml
+
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+### Docs
+docs/_build
+.venv/
+
+
+# vibe coding
+.claude
+openspec
+AGENTS.md
+CLAUDE.md
+
+##Log
+logs/
+
+## Frontend (all frontend/ directories across examples and extensions)
+# Dependencies
+**/frontend/node_modules/
+# Build output
+**/frontend/dist/
+**/frontend/build/
+**/frontend/.output/
+# Vite / bundler caches
+**/frontend/.vite/
+**/frontend/.cache/
+**/frontend/.parcel-cache/
+# Type-check / tsc output
+**/frontend/*.tsbuildinfo
+# Env files (may contain secrets)
+**/frontend/.env.local
+**/frontend/.env.*.local
+# Coverage
+**/frontend/coverage/
+# Storybook
+**/frontend/storybook-static/
+# boba-tea-shop: generated static assets served by the supervisor-agent
+**/boba-tea-shop/supervisor-agent/**/static/
+
+##agentscope
+.agentscope/
+
+## harness db
+**/*.db
