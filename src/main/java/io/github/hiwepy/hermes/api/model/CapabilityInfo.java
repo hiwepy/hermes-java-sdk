@@ -1,4 +1,4 @@
-package io.github.hiwepy.hermes.model;
+package io.github.hiwepy.hermes.api.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
