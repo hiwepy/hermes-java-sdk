@@ -21,12 +21,14 @@ public class HermesHttpClient implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(HermesHttpClient.class);
 
     private final HermesClientConfig config;
+    private final ObjectMapper objectMapper;
     private final UnirestInstance unirest;
 
     public HermesHttpClient(HermesClientConfig config) {
         this.config = Objects.requireNonNull(config, "config");
         ObjectMapper mapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.unirest = new UnirestInstance(new Config()
                 .connectTimeout(config.getConnectTimeoutMillis())
                 .requestTimeout(config.getReadTimeoutMillis())
@@ -88,6 +90,11 @@ public class HermesHttpClient implements AutoCloseable {
 
     public ModelsResponse listModels() {
         return get(PATH_MODELS, ModelsResponse.class);
+    }
+
+    public ModelsResponse.ModelData getModel(String modelId) {
+        return get(PATH_MODELS + "/" + java.net.URLEncoder.encode(modelId, java.nio.charset.StandardCharsets.UTF_8),
+                ModelsResponse.ModelData.class);
     }
 
     public CapabilityInfo getCapabilities() { return get(PATH_CAPABILITIES, CapabilityInfo.class); }
@@ -155,6 +162,14 @@ public class HermesHttpClient implements AutoCloseable {
     public boolean deleteSession(String id) {
         HttpResponse<String> resp = unirest.delete(url(PATH_SESSIONS + "/" + id)).asString();
         return resp.isSuccess();
+    }
+
+    @SuppressWarnings("unchecked")
+    public Session updateSession(String id, Map<String, Object> patch) {
+        HttpResponse<Map> resp = unirest.patch(url(PATH_SESSIONS + "/" + id))
+                .header(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON).body(patch).asObject(Map.class);
+        checkResponse(resp);
+        return objectMapper.convertValue(resp.getBody(), Session.class);
     }
 
     public ChatCompletionResponse sessionChat(String id, String input) {

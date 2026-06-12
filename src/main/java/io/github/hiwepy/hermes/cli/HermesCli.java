@@ -29,6 +29,8 @@ public class HermesCli {
     // ============================================================
 
     /** {@code hermes chat} — 交互式聊天 */
+    /** {@code hermes chat --toolsets "web,terminal"} — 指定工具集 */
+    public HermesCliResult chatToolsets(String toolsets) { return executor.execute("chat", "--toolsets", toolsets); }
     public HermesCliResult chat(String... extraArgs) {
         return executor.execute(prefix("chat", extraArgs));
     }
@@ -128,6 +130,8 @@ public class HermesCli {
     public HermesCliResult sessionsShow(String id) { return executor.execute("sessions", "show", id); }
     public HermesCliResult sessionsDelete(String id) { return executor.execute("sessions", "delete", id); }
     public HermesCliResult sessionsFork(String id) { return executor.execute("sessions", "fork", id); }
+    /** {@code hermes fork <id>} — 分支会话 */
+    public HermesCliResult fork(String id) { return executor.execute("fork", id); }
     public HermesCliResult sessionsRename(String id, String title) { return executor.execute("sessions", "rename", id, title); }
 
     // ============================================================
