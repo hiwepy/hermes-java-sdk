@@ -1,9 +1,10 @@
-package io.github.hiwepy.hermes.http;
+package io.github.hiwepy.hermes.api;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hiwepy.hermes.HermesClientConfig;
-import io.github.hiwepy.hermes.model.SseEvent;
+import io.github.hiwepy.hermes.api.model.ChatCompletionRequest;
+import io.github.hiwepy.hermes.api.model.SseEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,7 +75,65 @@ public class HermesSseClient implements AutoCloseable {
      * @param input     用户输入
      * @param consumer  事件消费者
      */
-    public void subscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer) {
+        /**
+     * Async subscribe to Chat Completion SSE stream, invoking consumer per event,
+     * onComplete at end, onError on failure.
+     */
+    public void subscribeChat(ChatCompletionRequest request,
+                              java.util.function.Consumer<SseEvent> consumer,
+                              Runnable onComplete,
+                              java.util.function.Consumer<Throwable> onError) {
+        this.running = true;
+        this.executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "hermes-sse-chat");
+            t.setDaemon(true);
+            return t;
+        });
+        this.executor.submit(() -> {
+            try {
+                String url = config.getServerUrl() + "/v1/chat/completions";
+                connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(config.getConnectTimeoutMillis());
+                connection.setReadTimeout(0);
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Accept", "text/event-stream");
+                connection.setRequestProperty("Cache-Control", "no-cache");
+                String apiKey = config.resolveApiKey();
+                if (!apiKey.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                String body = mapper.writeValueAsString(request);
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(body.getBytes(StandardCharsets.UTF_8));
+                }
+                int status = connection.getResponseCode();
+                if (status != 200) {
+                    onError.accept(new RuntimeException("SSE chat failed: " + status));
+                    return;
+                }
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while (running && (line = reader.readLine()) != null) {
+                        if (line.startsWith("data: ")) {
+                            String json = line.substring(6).trim();
+                            if ("[DONE]".equals(json)) { onComplete.run(); return; }
+                            if (!json.isEmpty()) {
+                                try {
+                                    SseEvent event = mapper.readValue(json, SseEvent.class);
+                                    consumer.accept(event);
+                                } catch (Exception e) { log.debug("SSE parse: {}", json, e); }
+                            }
+                        }
+                    }
+                }
+                onComplete.run();
+            } catch (Exception e) { log.warn("SSE chat error", e); onError.accept(e); }
+            finally { if (connection != null) connection.disconnect(); }
+        });
+    }
+
+public void subscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer) {
         this.running = true;
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "hermes-sse");
