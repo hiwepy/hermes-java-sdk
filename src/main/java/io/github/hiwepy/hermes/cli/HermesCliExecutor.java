@@ -28,7 +28,7 @@ public class HermesCliExecutor {
      * 同步执行 CLI 命令，返回执行结果。
      */
     public HermesCliResult execute(String... args) {
-        CommandLine cmd = CommandLine.parse(config.getLocalExecutable());
+        CommandLine cmd = new CommandLine(config.getLocalExecutable());
         for (String arg : args) {
             cmd.addArgument(arg);
         }

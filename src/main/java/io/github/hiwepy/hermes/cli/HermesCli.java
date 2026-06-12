@@ -46,6 +46,28 @@ public class HermesCli {
         return executor.execute("-z", query, "--model", model, "--provider", provider);
     }
 
+
+    /** {@code hermes chat -q "<query>"} — chat 子命令模式 */
+    public HermesCliResult chatQuery(String query) { return executor.execute("chat", "-q", query); }
+    public HermesCliResult chatQuery(String query, String model) {
+        return executor.execute("chat", "-q", query, "--model", model);
+    }
+    public HermesCliResult chatQuery(String query, String model, String provider) {
+        return executor.execute("chat", "-q", query, "--model", model, "--provider", provider);
+    }
+
+    /** {@code hermes -w -z "<query>"} — worktree 单查询模式 */
+    public HermesCliResult worktreeOneShot(String query) { return executor.execute("-w", "-z", query); }
+    /** {@code hermes -w} — worktree 交互模式 */
+    public HermesCliResult worktree() { return executor.execute("-w"); }
+
+    /** {@code hermes --continue} / {@code -c} — 恢复最近的 CLI 会话 */
+    public HermesCliResult continueSession() { return executor.execute("-c"); }
+    /** {@code hermes --resume <id>} — 恢复指定会话 */
+    public HermesCliResult resumeSession(String id) { return executor.execute("--resume", id); }
+
+    /** {@code hermes --tui} — TUI 模式 */
+
     // ============================================================
     // Model & Provider
     // ============================================================
@@ -106,6 +128,7 @@ public class HermesCli {
     public HermesCliResult sessionsShow(String id) { return executor.execute("sessions", "show", id); }
     public HermesCliResult sessionsDelete(String id) { return executor.execute("sessions", "delete", id); }
     public HermesCliResult sessionsFork(String id) { return executor.execute("sessions", "fork", id); }
+    public HermesCliResult sessionsRename(String id, String title) { return executor.execute("sessions", "rename", id, title); }
 
     // ============================================================
     // Skills, Tools, Memory
