@@ -3,6 +3,7 @@ package io.github.hiwepy.hermes.api;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hiwepy.hermes.HermesClientConfig;
+import static io.github.hiwepy.hermes.api.HermesApiConstants.*;
 import io.github.hiwepy.hermes.api.model.ChatCompletionRequest;
 import io.github.hiwepy.hermes.api.model.SseEvent;
 import org.slf4j.Logger;
@@ -91,17 +92,17 @@ public class HermesSseClient implements AutoCloseable {
         });
         this.executor.submit(() -> {
             try {
-                String url = config.getServerUrl() + "/v1/chat/completions";
+                String url = config.getServerUrl() + PATH_CHAT_COMPLETIONS;
                 connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
                 connection.setRequestMethod("POST");
                 connection.setDoOutput(true);
                 connection.setConnectTimeout(config.getConnectTimeoutMillis());
                 connection.setReadTimeout(0);
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Accept", "text/event-stream");
-                connection.setRequestProperty("Cache-Control", "no-cache");
+                connection.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
+                connection.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+                connection.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
                 String apiKey = config.resolveApiKey();
-                if (!apiKey.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                if (!apiKey.isEmpty()) connection.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
                 String body = mapper.writeValueAsString(request);
                 try (OutputStream os = connection.getOutputStream()) {
                     os.write(body.getBytes(StandardCharsets.UTF_8));
@@ -115,9 +116,9 @@ public class HermesSseClient implements AutoCloseable {
                         new InputStreamReader(connection.getInputStream()))) {
                     String line;
                     while (running && (line = reader.readLine()) != null) {
-                        if (line.startsWith("data: ")) {
+                        if (line.startsWith(SSE_DATA_PREFIX)) {
                             String json = line.substring(6).trim();
-                            if ("[DONE]".equals(json)) { onComplete.run(); return; }
+                            if (SSE_DONE_MARKER.equals(json)) { onComplete.run(); return; }
                             if (!json.isEmpty()) {
                                 try {
                                     SseEvent event = mapper.readValue(json, SseEvent.class);
@@ -146,23 +147,23 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
     private void doSubscribeRun(String runId, Consumer<SseEvent> consumer) {
         while (running) {
             try {
-                String url = config.getServerUrl() + "/v1/runs/" + runId + "/events";
+                String url = config.getServerUrl() + PATH_RUNS + "/" + runId + "/events";
                 connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
                 connection.setRequestMethod("GET");
                 connection.setConnectTimeout(config.getConnectTimeoutMillis());
                 connection.setReadTimeout(0); // SSE 无读超时
-                connection.setRequestProperty("Accept", "text/event-stream");
-                connection.setRequestProperty("Cache-Control", "no-cache");
+                connection.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+                connection.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
 
                 String apiKey = config.resolveApiKey();
                 if (!apiKey.isEmpty()) {
-                    connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                    connection.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
                 }
 
                 int status = connection.getResponseCode();
                 if (status != 200) {
                     log.warn("SSE connection failed with status: {}, retrying in 5s", status);
-                    Thread.sleep(5000);
+                    Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
                     continue;
                 }
 
@@ -170,7 +171,7 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
                     String line;
                     while (running && (line = reader.readLine()) != null) {
-                        if (line.startsWith("data: ")) {
+                        if (line.startsWith(SSE_DATA_PREFIX)) {
                             String json = line.substring(6).trim();
                             if (!json.isEmpty()) {
                                 try {
@@ -190,7 +191,7 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
                 if (running) {
                     log.warn("SSE connection lost, retrying in 5s", e);
                     try {
-                        Thread.sleep(5000);
+                        Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -207,19 +208,19 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
     private void doSubscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer) {
         while (running) {
             try {
-                String url = config.getServerUrl() + "/api/sessions/" + sessionId + "/chat/stream";
+                String url = config.getServerUrl() + PATH_SESSIONS + "/" + sessionId + "/chat/stream";
                 connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
                 connection.setRequestMethod("POST");
                 connection.setConnectTimeout(config.getConnectTimeoutMillis());
                 connection.setReadTimeout(0); // SSE 无读超时
                 connection.setDoOutput(true);
-                connection.setRequestProperty("Accept", "text/event-stream");
-                connection.setRequestProperty("Cache-Control", "no-cache");
-                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+                connection.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
+                connection.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
 
                 String apiKey = config.resolveApiKey();
                 if (!apiKey.isEmpty()) {
-                    connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                    connection.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
                 }
 
                 String body = mapper.writeValueAsString(java.util.Map.of("input", input));
@@ -230,7 +231,7 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
                 int status = connection.getResponseCode();
                 if (status != 200) {
                     log.warn("SSE session stream failed with status: {}, retrying in 5s", status);
-                    Thread.sleep(5000);
+                    Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
                     continue;
                 }
 
@@ -238,7 +239,7 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
                     String line;
                     while (running && (line = reader.readLine()) != null) {
-                        if (line.startsWith("data: ")) {
+                        if (line.startsWith(SSE_DATA_PREFIX)) {
                             String json = line.substring(6).trim();
                             if (!json.isEmpty()) {
                                 try {
@@ -258,7 +259,7 @@ public void subscribeSessionStream(String sessionId, String input, Consumer<SseE
                 if (running) {
                     log.warn("SSE session stream connection lost, retrying in 5s", e);
                     try {
-                        Thread.sleep(5000);
+                        Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;

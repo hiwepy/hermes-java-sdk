@@ -3,6 +3,7 @@ package io.github.hiwepy.hermes.api;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hiwepy.hermes.HermesClientConfig;
+import static io.github.hiwepy.hermes.api.HermesApiConstants.*;
 import io.github.hiwepy.hermes.api.model.*;
 import io.github.hiwepy.hermes.exception.HermesHttpException;
 import kong.unirest.core.*;
@@ -42,22 +43,22 @@ public class HermesHttpClient implements AutoCloseable {
     // Global / Health
     // ============================================================
 
-    public HealthStatus health() { return get("/health", HealthStatus.class); }
+    public HealthStatus health() { return get(PATH_HEALTH, HealthStatus.class); }
 
-    public HealthStatus healthDetailed() { return get("/health/detailed", HealthStatus.class); }
+    public HealthStatus healthDetailed() { return get(PATH_HEALTH_DETAILED, HealthStatus.class); }
 
-    public HealthStatus healthV1() { return get("/v1/health", HealthStatus.class); }
+    public HealthStatus healthV1() { return get(PATH_V1_HEALTH, HealthStatus.class); }
 
     // ============================================================
     // Chat Completion
     // ============================================================
 
     public ChatCompletionResponse chatCompletion(ChatCompletionRequest request) {
-        return post("/v1/chat/completions", request, ChatCompletionResponse.class);
+        return post(PATH_CHAT_COMPLETIONS, request, ChatCompletionResponse.class);
     }
 
     public ChatCompletionResponse chatCompletion(ChatCompletionRequest request, Map<String, String> headers) {
-        return post("/v1/chat/completions", request, ChatCompletionResponse.class, headers);
+        return post(PATH_CHAT_COMPLETIONS, request, ChatCompletionResponse.class, headers);
     }
 
     // ============================================================
@@ -65,11 +66,11 @@ public class HermesHttpClient implements AutoCloseable {
     // ============================================================
 
     public ResponseResult createResponse(ResponseRequest request) {
-        return post("/v1/responses", request, ResponseResult.class);
+        return post(PATH_RESPONSES, request, ResponseResult.class);
     }
 
     public ResponseResult createResponse(ResponseRequest request, Map<String, String> headers) {
-        return post("/v1/responses", request, ResponseResult.class, headers);
+        return post(PATH_RESPONSES, request, ResponseResult.class, headers);
     }
 
     public ResponseResult getResponse(String responseId) {
@@ -86,10 +87,10 @@ public class HermesHttpClient implements AutoCloseable {
     // ============================================================
 
     public ModelsResponse listModels() {
-        return get("/v1/models", ModelsResponse.class);
+        return get(PATH_MODELS, ModelsResponse.class);
     }
 
-    public CapabilityInfo getCapabilities() { return get("/v1/capabilities", CapabilityInfo.class); }
+    public CapabilityInfo getCapabilities() { return get(PATH_CAPABILITIES, CapabilityInfo.class); }
 
     // ============================================================
     // Skills & Toolsets
@@ -97,12 +98,12 @@ public class HermesHttpClient implements AutoCloseable {
 
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> listSkills() {
-        return getList("/v1/skills", new GenericType<List<Map<String, Object>>>() {});
+        return getList(PATH_SKILLS, new GenericType<List<Map<String, Object>>>() {});
     }
 
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> listToolsets() {
-        return getList("/v1/toolsets", new GenericType<List<Map<String, Object>>>() {});
+        return getList(PATH_TOOLSETS, new GenericType<List<Map<String, Object>>>() {});
     }
 
     // ============================================================
@@ -110,7 +111,7 @@ public class HermesHttpClient implements AutoCloseable {
     // ============================================================
 
     public RunStatus createRun(RunCreateRequest request) {
-        return post("/v1/runs", request, RunStatus.class);
+        return post(PATH_RUNS, request, RunStatus.class);
     }
 
     public RunStatus getRun(String runId) { return get("/v1/runs/" + runId, RunStatus.class); }
@@ -130,11 +131,11 @@ public class HermesHttpClient implements AutoCloseable {
 
     public Session createSession(String title) {
         Map<String, Object> body = title != null ? Map.of("title", title) : Map.of();
-        return post("/api/sessions", body, Session.class);
+        return post(PATH_SESSIONS, body, Session.class);
     }
 
     public List<Session> listSessions() {
-        return getList("/api/sessions", new GenericType<List<Session>>() {});
+        return getList(PATH_SESSIONS, new GenericType<List<Session>>() {});
     }
 
     public Session getSession(String id) { return get("/api/sessions/" + id, Session.class); }
@@ -166,11 +167,11 @@ public class HermesHttpClient implements AutoCloseable {
 
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> listJobs() {
-        return getList("/api/jobs", new GenericType<List<Map<String, Object>>>() {});
+        return getList(PATH_JOBS, new GenericType<List<Map<String, Object>>>() {});
     }
 
     public Map<String, Object> createJob(Map<String, Object> job) {
-        return postMap("/api/jobs", job);
+        return postMap(PATH_JOBS, job);
     }
 
     public Map<String, Object> getJob(String jobId) {
@@ -205,9 +206,9 @@ public class HermesHttpClient implements AutoCloseable {
     /** Build Hermes-specific request headers. */
     public static Map<String, String> hermesHeaders(String sessionKey, String sessionId, String messageChannel) {
         Map<String, String> h = new LinkedHashMap<>();
-        if (sessionKey != null) h.put("X-Hermes-Session-Key", sessionKey);
-        if (sessionId != null) h.put("X-Hermes-Session-Id", sessionId);
-        if (messageChannel != null) h.put("X-Hermes-Message-Channel", messageChannel);
+        if (sessionKey != null) h.put(HEADER_SESSION_KEY, sessionKey);
+        if (sessionId != null) h.put(HEADER_SESSION_ID, sessionId);
+        if (messageChannel != null) h.put(HEADER_MESSAGE_CHANNEL, messageChannel);
         return h.isEmpty() ? null : h;
     }
 
