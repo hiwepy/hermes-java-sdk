@@ -16,14 +16,17 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * Hermes Server SSE 客户端，消费 run 事件流和 session 流式聊天。
+ * Hermes Server SSE 客户端，消费 run 事件流和 session/chat 流式聊天。
+ * <p>每个实例同一时间只允许一个活跃订阅。重复调用 subscribe/subscribeChat 会先停止旧订阅。</p>
  */
 public class HermesSseClient implements AutoCloseable {
 
@@ -31,9 +34,7 @@ public class HermesSseClient implements AutoCloseable {
 
     private final HermesClientConfig config;
     private final ObjectMapper mapper;
-    private volatile boolean running;
-    private HttpURLConnection connection;
-    private ExecutorService executor;
+    private final AtomicReference<Subscription> activeSubscription = new AtomicReference<>();
 
     public HermesSseClient(HermesClientConfig config) {
         this.config = config;
@@ -41,253 +42,223 @@ public class HermesSseClient implements AutoCloseable {
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    /**
-     * 异步订阅 run 事件流，事件通过 consumer 回调。
-     *
-     * @param runId    run ID
-     * @param consumer 事件消费者
-     */
+    /** 异步订阅 run 事件流。 */
     public void subscribe(String runId, Consumer<SseEvent> consumer) {
-        this.running = true;
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "hermes-sse");
-            t.setDaemon(true);
-            return t;
-        });
-        this.executor.submit(() -> doSubscribeRun(runId, consumer));
+        stopCurrent();
+        Subscription sub = new Subscription("hermes-sse-run");
+        activeSubscription.set(sub);
+        sub.executor.submit(() -> doSubscribeRun(runId, consumer, sub));
     }
 
-    /**
-     * 阻塞式订阅 run 事件流，返回一个 BlockingQueue，事件入队供外部消费。
-     *
-     * @param runId run ID
-     * @return 事件队列
-     */
+    /** 返回 BlockingQueue 用于 run 事件流消费。 */
     public BlockingQueue<SseEvent> subscribeQueue(String runId) {
         BlockingQueue<SseEvent> queue = new LinkedBlockingQueue<>();
         subscribe(runId, queue::offer);
         return queue;
     }
 
-    /**
-     * 异步订阅 session 流式聊天，通过 POST 发送 input 并读取 SSE 响应。
-     *
-     * @param sessionId session ID
-     * @param input     用户输入
-     * @param consumer  事件消费者
-     */
-        /**
-     * Async subscribe to Chat Completion SSE stream, invoking consumer per event,
-     * onComplete at end, onError on failure.
-     */
+    /** 异步订阅 Chat Completion SSE 流式响应。 */
     public void subscribeChat(ChatCompletionRequest request,
-                              java.util.function.Consumer<SseEvent> consumer,
+                              Consumer<SseEvent> consumer,
                               Runnable onComplete,
-                              java.util.function.Consumer<Throwable> onError) {
-        this.running = true;
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "hermes-sse-chat");
-            t.setDaemon(true);
-            return t;
-        });
-        this.executor.submit(() -> {
+                              Consumer<Throwable> onError) {
+        stopCurrent();
+        Subscription sub = new Subscription("hermes-sse-chat");
+        activeSubscription.set(sub);
+        sub.executor.submit(() -> {
             try {
                 String url = config.getServerUrl() + PATH_CHAT_COMPLETIONS;
-                connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
-                connection.setRequestMethod("POST");
-                connection.setDoOutput(true);
-                connection.setConnectTimeout(config.getConnectTimeoutMillis());
-                connection.setReadTimeout(0);
-                connection.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
-                connection.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
-                connection.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
+                HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+                sub.connection = conn;
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(config.getConnectTimeoutMillis());
+                conn.setReadTimeout(0);
+                conn.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
+                conn.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+                conn.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
                 String apiKey = config.resolveApiKey();
-                if (!apiKey.isEmpty()) connection.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
+                if (!apiKey.isEmpty()) conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
                 String body = mapper.writeValueAsString(request);
-                try (OutputStream os = connection.getOutputStream()) {
+                try (OutputStream os = conn.getOutputStream()) {
                     os.write(body.getBytes(StandardCharsets.UTF_8));
                 }
-                int status = connection.getResponseCode();
+                int status = conn.getResponseCode();
                 if (status != 200) {
-                    onError.accept(new RuntimeException("SSE chat failed: " + status));
+                    String errBody = readErrorBody(conn);
+                    onError.accept(new RuntimeException("SSE chat failed: " + status + " " + errBody));
                     return;
                 }
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(connection.getInputStream()))) {
-                    String line;
-                    while (running && (line = reader.readLine()) != null) {
-                        if (line.startsWith(SSE_DATA_PREFIX)) {
-                            String json = line.substring(6).trim();
-                            if (SSE_DONE_MARKER.equals(json)) { onComplete.run(); return; }
-                            if (!json.isEmpty()) {
-                                try {
-                                    SseEvent event = mapper.readValue(json, SseEvent.class);
-                                    consumer.accept(event);
-                                } catch (Exception e) { log.debug("SSE parse: {}", json, e); }
-                            }
-                        }
-                    }
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                    parseSseStream(reader, consumer, onComplete, sub);
                 }
                 onComplete.run();
             } catch (Exception e) { log.warn("SSE chat error", e); onError.accept(e); }
-            finally { if (connection != null) connection.disconnect(); }
+            finally { sub.executor.shutdown(); }
         });
     }
 
-public void subscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer) {
-        this.running = true;
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "hermes-sse");
-            t.setDaemon(true);
-            return t;
-        });
-        this.executor.submit(() -> doSubscribeSessionStream(sessionId, input, consumer));
+    /** 异步订阅 session 流式聊天。 */
+    public void subscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer) {
+        stopCurrent();
+        Subscription sub = new Subscription("hermes-sse-session");
+        activeSubscription.set(sub);
+        sub.executor.submit(() -> doSubscribeSessionStream(sessionId, input, consumer, sub));
     }
 
-    private void doSubscribeRun(String runId, Consumer<SseEvent> consumer) {
-        while (running) {
+    // ============================================================
+    // Internals
+    // ============================================================
+
+    /** 解析 SSE 流，支持 data: 和 event: 行。在 [DONE] 时调用 onComplete 并返回 true。 */
+    private boolean parseSseStream(BufferedReader reader, Consumer<SseEvent> consumer,
+                                   Runnable onComplete, Subscription sub) throws IOException {
+        String currentEvent = null;
+        String line;
+        while (sub.running && (line = reader.readLine()) != null) {
+            if (line.isEmpty()) { currentEvent = null; continue; }
+
+            if (line.startsWith(SSE_EVENT_PREFIX)) {
+                currentEvent = line.substring(SSE_EVENT_PREFIX.length()).trim();
+                continue;
+            }
+            if (line.startsWith(SSE_DATA_PREFIX)) {
+                String json = line.substring(SSE_DATA_PREFIX.length()).trim();
+                if (SSE_DONE_MARKER.equals(json)) { onComplete.run(); return true; }
+                if (!json.isEmpty()) {
+                    try {
+                        SseEvent event = mapper.readValue(json, SseEvent.class);
+                        event.setEvent(currentEvent);
+                        consumer.accept(event);
+                    } catch (Exception e) { log.debug("SSE parse: {}", json, e); }
+                }
+            }
+        }
+        return false;
+    }
+
+    private void doSubscribeRun(String runId, Consumer<SseEvent> consumer, Subscription sub) {
+        while (sub.running) {
             try {
                 String url = config.getServerUrl() + PATH_RUNS + "/" + runId + "/events";
-                connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(config.getConnectTimeoutMillis());
-                connection.setReadTimeout(0); // SSE 无读超时
-                connection.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
-                connection.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
-
+                HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+                sub.connection = conn;
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(config.getConnectTimeoutMillis());
+                conn.setReadTimeout(0);
+                conn.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+                conn.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
                 String apiKey = config.resolveApiKey();
-                if (!apiKey.isEmpty()) {
-                    connection.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
-                }
-
-                int status = connection.getResponseCode();
+                if (!apiKey.isEmpty()) conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
+                int status = conn.getResponseCode();
                 if (status != 200) {
-                    log.warn("SSE connection failed with status: {}, retrying in 5s", status);
+                    String errBody = readErrorBody(conn);
+                    log.warn("SSE run events failed status={} body={}, retrying", status, errBody);
                     Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
                     continue;
                 }
-
                 log.info("SSE connected to {}", url);
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
-                    String line;
-                    while (running && (line = reader.readLine()) != null) {
-                        if (line.startsWith(SSE_DATA_PREFIX)) {
-                            String json = line.substring(6).trim();
-                            if (!json.isEmpty()) {
-                                try {
-                                    SseEvent event = mapper.readValue(json, SseEvent.class);
-                                    consumer.accept(event);
-                                } catch (Exception e) {
-                                    log.debug("Failed to parse SSE event: {}", json, e);
-                                }
-                            }
-                        }
-                    }
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                    parseSseStream(reader, consumer, () -> {}, sub);
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (IOException e) {
-                if (running) {
-                    log.warn("SSE connection lost, retrying in 5s", e);
-                    try {
-                        Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+            } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+            catch (IOException e) {
+                if (sub.running) {
+                    log.warn("SSE connection lost, retrying", e);
+                    try { Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
                 }
             } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+                if (sub.connection != null) { sub.connection.disconnect(); sub.connection = null; }
             }
         }
     }
 
-    private void doSubscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer) {
-        while (running) {
+    private void doSubscribeSessionStream(String sessionId, String input, Consumer<SseEvent> consumer, Subscription sub) {
+        while (sub.running) {
             try {
                 String url = config.getServerUrl() + PATH_SESSIONS + "/" + sessionId + "/chat/stream";
-                connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(config.getConnectTimeoutMillis());
-                connection.setReadTimeout(0); // SSE 无读超时
-                connection.setDoOutput(true);
-                connection.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
-                connection.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
-                connection.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
-
+                HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+                sub.connection = conn;
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(config.getConnectTimeoutMillis());
+                conn.setReadTimeout(0);
+                conn.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+                conn.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
+                conn.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
                 String apiKey = config.resolveApiKey();
-                if (!apiKey.isEmpty()) {
-                    connection.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
-                }
-
+                if (!apiKey.isEmpty()) conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
                 String body = mapper.writeValueAsString(java.util.Map.of("input", input));
-                try (OutputStream os = connection.getOutputStream()) {
+                try (OutputStream os = conn.getOutputStream()) {
                     os.write(body.getBytes(StandardCharsets.UTF_8));
                 }
-
-                int status = connection.getResponseCode();
+                int status = conn.getResponseCode();
                 if (status != 200) {
-                    log.warn("SSE session stream failed with status: {}, retrying in 5s", status);
+                    String errBody = readErrorBody(conn);
+                    log.warn("SSE session stream failed status={} body={}, retrying", status, errBody);
                     Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
                     continue;
                 }
-
-                log.info("SSE session stream connected to {}", url);
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
-                    String line;
-                    while (running && (line = reader.readLine()) != null) {
-                        if (line.startsWith(SSE_DATA_PREFIX)) {
-                            String json = line.substring(6).trim();
-                            if (!json.isEmpty()) {
-                                try {
-                                    SseEvent event = mapper.readValue(json, SseEvent.class);
-                                    consumer.accept(event);
-                                } catch (Exception e) {
-                                    log.debug("Failed to parse SSE event: {}", json, e);
-                                }
-                            }
-                        }
-                    }
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                    parseSseStream(reader, consumer, () -> {}, sub);
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (IOException e) {
-                if (running) {
-                    log.warn("SSE session stream connection lost, retrying in 5s", e);
-                    try {
-                        Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+            } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+            catch (IOException e) {
+                if (sub.running) {
+                    log.warn("SSE session stream lost, retrying", e);
+                    try { Thread.sleep(DEFAULT_CONNECT_TIMEOUT_MS / 3); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
                 }
             } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+                if (sub.connection != null) { sub.connection.disconnect(); sub.connection = null; }
             }
         }
     }
 
-    /**
-     * 停止事件流订阅。
-     */
+    private static String readErrorBody(HttpURLConnection conn) {
+        try {
+            java.io.InputStream es = conn.getErrorStream();
+            if (es == null) return "";
+            Scanner s = new Scanner(es, "UTF-8").useDelimiter("\\A");
+            return s.hasNext() ? s.next() : "";
+        } catch (Exception e) { return ""; }
+    }
+
+    // ============================================================
+    // Lifecycle
+    // ============================================================
+
     public void stop() {
-        this.running = false;
-        if (connection != null) {
-            connection.disconnect();
-        }
-        if (executor != null) {
-            executor.shutdownNow();
-        }
+        stopCurrent();
+    }
+
+    private void stopCurrent() {
+        Subscription old = activeSubscription.getAndSet(null);
+        if (old != null) old.stop();
     }
 
     @Override
-    public void close() {
-        stop();
+    public void close() { stop(); }
+
+    /** Per-subscription state so multiple subscriptions don't share mutable fields. */
+    private static class Subscription {
+        volatile boolean running = true;
+        volatile HttpURLConnection connection;
+        final ExecutorService executor;
+
+        Subscription(String name) {
+            this.executor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, name);
+                t.setDaemon(true);
+                return t;
+            });
+        }
+
+        void stop() {
+            running = false;
+            if (connection != null) connection.disconnect();
+            executor.shutdownNow();
+        }
     }
 }

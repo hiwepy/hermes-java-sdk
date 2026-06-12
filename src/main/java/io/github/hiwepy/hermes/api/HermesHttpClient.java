@@ -78,7 +78,7 @@ public class HermesHttpClient implements AutoCloseable {
     }
 
     public boolean deleteResponse(String responseId) {
-        HttpResponse<String> resp = unirest.delete(url("/v1/responses/" + responseId)).asString();
+        HttpResponse<String> resp = unirest.delete(url(PATH_RESPONSES + "/" + responseId)).asString();
         return resp.isSuccess();
     }
 
@@ -117,12 +117,12 @@ public class HermesHttpClient implements AutoCloseable {
     public RunStatus getRun(String runId) { return get("/v1/runs/" + runId, RunStatus.class); }
 
     public void stopRun(String runId) {
-        HttpResponse<String> resp = unirest.post(url("/v1/runs/" + runId + "/stop")).asString();
+        HttpResponse<String> resp = unirest.post(url(PATH_RUNS + "/" + runId + "/stop")).asString();
         if (!resp.isSuccess()) throw new HermesHttpException(resp.getStatus(), resp.getBody() != null ? resp.getBody() : "");
     }
 
     public Map<String, Object> approveRun(String runId, Map<String, Object> decision) {
-        return postMap("/v1/runs/" + runId + "/approval", decision);
+        return postMap(PATH_RUNS + "/" + runId + "/approval", decision);
     }
 
     // ============================================================
@@ -138,27 +138,27 @@ public class HermesHttpClient implements AutoCloseable {
         return getList(PATH_SESSIONS, new GenericType<List<Session>>() {});
     }
 
-    public Session getSession(String id) { return get("/api/sessions/" + id, Session.class); }
+    public Session getSession(String id) { return get(PATH_SESSIONS + "/" + id, Session.class); }
 
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> getSessionMessages(String id) {
-        return getList("/api/sessions/" + id + "/messages",
+        return getList(PATH_SESSIONS + "/" + id + "/messages",
                 new GenericType<List<Map<String, Object>>>() {});
     }
 
     public Session forkSession(String id, String title) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (title != null) body.put("title", title);
-        return post("/api/sessions/" + id + "/fork", body, Session.class);
+        return post(PATH_SESSIONS + "/" + id + "/fork", body, Session.class);
     }
 
     public boolean deleteSession(String id) {
-        HttpResponse<String> resp = unirest.delete(url("/api/sessions/" + id)).asString();
+        HttpResponse<String> resp = unirest.delete(url(PATH_SESSIONS + "/" + id)).asString();
         return resp.isSuccess();
     }
 
     public ChatCompletionResponse sessionChat(String id, String input) {
-        return post("/api/sessions/" + id + "/chat", Map.of("input", input), ChatCompletionResponse.class);
+        return post(PATH_SESSIONS + "/" + id + "/chat", Map.of("input", input), ChatCompletionResponse.class);
     }
 
     // ============================================================
@@ -174,16 +174,26 @@ public class HermesHttpClient implements AutoCloseable {
         return postMap(PATH_JOBS, job);
     }
 
+    @SuppressWarnings("unchecked")
     public Map<String, Object> getJob(String jobId) {
-        return get("/api/jobs/" + jobId, (Class<Map<String, Object>>) (Class<?>) Map.class);
+        HttpResponse<Map> resp = unirest.get(url(PATH_JOBS + "/" + jobId)).asObject(Map.class);
+        checkResponse(resp);
+        return resp.getBody();
     }
 
+    @SuppressWarnings("unchecked")
     public Map<String, Object> updateJob(String jobId, Map<String, Object> patch) {
-        return postMap("/api/jobs/" + jobId, patch); // uses PATCH via POST compat
+        HttpResponse<Map> resp = unirest.patch(url(PATH_JOBS + "/" + jobId))
+                .header(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON).body(patch).asObject(Map.class);
+        checkResponse(resp);
+        return resp.getBody();
     }
 
     public boolean deleteJob(String jobId) {
-        HttpResponse<String> resp = unirest.delete(url("/api/jobs/" + jobId)).asString();
+        HttpResponse<String> resp = unirest.delete(url(PATH_JOBS + "/" + jobId)).asString();
+        if (!resp.isSuccess() && resp.getStatus() != 404) {
+            log.warn("deleteJob {} failed: {}", jobId, resp.getStatus());
+        }
         return resp.isSuccess();
     }
 
