@@ -95,8 +95,12 @@ public class HermesSseClient implements AutoCloseable {
             conn.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
             conn.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
             String apiKey = config.resolveApiKey();
-            if (!apiKey.isEmpty()) conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
-            if (headers != null) headers.forEach((k, v) -> { if (v != null) conn.setRequestProperty(k, v); });
+            if (!apiKey.isEmpty()) {
+                conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
+            }
+            if (headers != null) {
+                headers.forEach((k, v) -> { if (v != null) conn.setRequestProperty(k, v); });
+            }
             String body = mapper.writeValueAsString(request);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(body.getBytes(StandardCharsets.UTF_8));
