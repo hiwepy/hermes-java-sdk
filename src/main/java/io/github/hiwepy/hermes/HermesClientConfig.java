@@ -3,6 +3,8 @@ package io.github.hiwepy.hermes;
 import io.github.hiwepy.hermes.api.HermesApiConstants;
 import lombok.Data;
 
+import java.util.Objects;
+
 /**
  * Hermes 客户端配置（纯 POJO，可与 Spring {@code @ConfigurationProperties} 映射）。
  * <p>
@@ -78,6 +80,6 @@ public class HermesClientConfig {
      * @return apiKey 非空则用之，否则空字符串
      */
     public String resolveApiKey() {
-        return apiKey != null ? apiKey : "";
+        return Objects.toString(apiKey, "");
     }
 }

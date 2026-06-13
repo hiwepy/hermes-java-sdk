@@ -250,7 +250,7 @@ public class HermesHttpClient implements AutoCloseable {
         if (sessionKey != null) h.put(HEADER_SESSION_KEY, sessionKey);
         if (sessionId != null) h.put(HEADER_SESSION_ID, sessionId);
         if (messageChannel != null) h.put(HEADER_MESSAGE_CHANNEL, messageChannel);
-        return h.isEmpty() ? null : h;
+        return h.isEmpty() ? h : h;
     }
 
     // ============================================================
