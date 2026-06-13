@@ -1,18 +1,19 @@
 package io.github.hiwepy.hermes.cli;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Objects;
 
 /**
  * 本地 {@code hermes} CLI 命令封装，覆盖官方 CLI 文档中的主要子命令。
  */
+@Slf4j
 public class HermesCli {
 
-    private static final Logger log = LoggerFactory.getLogger(HermesCli.class);
     private final HermesCliExecutor executor;
 
     public HermesCli(HermesCliExecutor executor) {
-        this.executor = executor;
+        this.executor = Objects.requireNonNull(executor, "executor");
     }
 
     public HermesCliExecutor executor() { return executor; }

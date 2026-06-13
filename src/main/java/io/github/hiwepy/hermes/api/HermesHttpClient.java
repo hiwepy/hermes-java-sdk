@@ -1,24 +1,22 @@
 package io.github.hiwepy.hermes.api;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hiwepy.hermes.HermesClientConfig;
 import static io.github.hiwepy.hermes.api.HermesApiConstants.*;
 import io.github.hiwepy.hermes.api.model.*;
 import io.github.hiwepy.hermes.exception.HermesHttpException;
+import io.github.hiwepy.hermes.util.HermesObjectMapper;
 import kong.unirest.core.*;
 import kong.unirest.modules.jackson.JacksonObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 
 /**
  * Hermes Server HTTP 客户端，封装 REST API。
  */
+@Slf4j
 public class HermesHttpClient implements AutoCloseable {
-
-    private static final Logger log = LoggerFactory.getLogger(HermesHttpClient.class);
 
     private final HermesClientConfig config;
     private final ObjectMapper objectMapper;
@@ -26,14 +24,12 @@ public class HermesHttpClient implements AutoCloseable {
 
     public HermesHttpClient(HermesClientConfig config) {
         this.config = Objects.requireNonNull(config, "config");
-        ObjectMapper mapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = HermesObjectMapper.INSTANCE;
         this.unirest = new UnirestInstance(new Config()
                 .connectTimeout(config.getConnectTimeoutMillis())
                 .requestTimeout(config.getReadTimeoutMillis())
                 .verifySsl(config.isVerifySsl())
-                .setObjectMapper(new JacksonObjectMapper(mapper)));
+                .setObjectMapper(new JacksonObjectMapper(objectMapper)));
 
         String apiKey = config.resolveApiKey();
         if (!apiKey.isEmpty()) {
@@ -55,12 +51,12 @@ public class HermesHttpClient implements AutoCloseable {
     // Chat Completion
     // ============================================================
 
-    public ChatCompletionResponse chatCompletion(ChatCompletionRequest request) {
-        return post(PATH_CHAT_COMPLETIONS, request, ChatCompletionResponse.class);
+    public ChatResponse chatCompletion(ChatRequest request) {
+        return post(PATH_CHAT_COMPLETIONS, request, ChatResponse.class);
     }
 
-    public ChatCompletionResponse chatCompletion(ChatCompletionRequest request, Map<String, String> headers) {
-        return post(PATH_CHAT_COMPLETIONS, request, ChatCompletionResponse.class, headers);
+    public ChatResponse chatCompletion(ChatRequest request, Map<String, String> headers) {
+        return post(PATH_CHAT_COMPLETIONS, request, ChatResponse.class, headers);
     }
 
     // ============================================================
@@ -145,6 +141,26 @@ public class HermesHttpClient implements AutoCloseable {
         return getList(PATH_SESSIONS, new GenericType<List<Session>>() {});
     }
 
+    /**
+     * 分页列出 sessions。
+     *
+     * @param limit           最大返回条数
+     * @param offset          偏移量
+     * @param source          来源过滤
+     * @param includeChildren 是否包含子 session
+     */
+    @SuppressWarnings("unchecked")
+    public List<Session> listSessions(Integer limit, Integer offset, String source, Boolean includeChildren) {
+        GetRequest req = unirest.get(url(PATH_SESSIONS));
+        if (limit != null) req.queryString("limit", limit);
+        if (offset != null) req.queryString("offset", offset);
+        if (source != null) req.queryString("source", source);
+        if (includeChildren != null) req.queryString("include_children", includeChildren);
+        HttpResponse<List<Session>> resp = req.asObject(new GenericType<List<Session>>() {});
+        checkResponse(resp);
+        return resp.getBody();
+    }
+
     public Session getSession(String id) { return get(PATH_SESSIONS + "/" + id, Session.class); }
 
     @SuppressWarnings("unchecked")
@@ -172,8 +188,8 @@ public class HermesHttpClient implements AutoCloseable {
         return objectMapper.convertValue(resp.getBody(), Session.class);
     }
 
-    public ChatCompletionResponse sessionChat(String id, String input) {
-        return post(PATH_SESSIONS + "/" + id + "/chat", Map.of("input", input), ChatCompletionResponse.class);
+    public ChatResponse sessionChat(String id, String input) {
+        return post(PATH_SESSIONS + "/" + id + "/chat", Map.of("input", input), ChatResponse.class);
     }
 
     // ============================================================
@@ -268,7 +284,11 @@ public class HermesHttpClient implements AutoCloseable {
     private <T> T post(String path, Object body, Class<T> type, Map<String, String> headers) {
         HttpRequestWithBody req = unirest.post(url(path))
                 .header("Content-Type", "application/json");
-        if (headers != null) headers.forEach((k, v) -> { if (v != null) req.header(k, v); });
+        if (headers != null) {
+            headers.forEach((k, v) -> { if (v != null) {
+                req.header(k, v);
+            }});
+        }
         HttpResponse<T> resp = req.body(body).asObject(type);
         checkResponse(resp);
         return resp.getBody();

@@ -1,13 +1,12 @@
 package io.github.hiwepy.hermes.api;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hiwepy.hermes.HermesClientConfig;
 import static io.github.hiwepy.hermes.api.HermesApiConstants.*;
-import io.github.hiwepy.hermes.api.model.ChatCompletionRequest;
+import io.github.hiwepy.hermes.api.model.ChatRequest;
 import io.github.hiwepy.hermes.api.model.SseEvent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.hiwepy.hermes.util.HermesObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -16,6 +15,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -28,18 +30,16 @@ import java.util.function.Consumer;
  * Hermes Server SSE 客户端，消费 run 事件流和 session/chat 流式聊天。
  * <p>每个实例同一时间只允许一个活跃订阅。重复调用 subscribe/subscribeChat 会先停止旧订阅。</p>
  */
+@Slf4j
 public class HermesSseClient implements AutoCloseable {
-
-    private static final Logger log = LoggerFactory.getLogger(HermesSseClient.class);
 
     private final HermesClientConfig config;
     private final ObjectMapper mapper;
     private final AtomicReference<Subscription> activeSubscription = new AtomicReference<>();
 
     public HermesSseClient(HermesClientConfig config) {
-        this.config = config;
-        this.mapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.config = Objects.requireNonNull(config, "config");
+        this.mapper = HermesObjectMapper.INSTANCE;
     }
 
     /** 异步订阅 run 事件流。 */
@@ -57,45 +57,62 @@ public class HermesSseClient implements AutoCloseable {
         return queue;
     }
 
-    /** 异步订阅 Chat Completion SSE 流式响应。 */
-    public void subscribeChat(ChatCompletionRequest request,
+    /** 异步订阅 Chat Completion SSE 流式响应（无额外 headers）。 */
+    public void subscribeChat(ChatRequest request,
+                              Consumer<SseEvent> consumer,
+                              Runnable onComplete,
+                              Consumer<Throwable> onError) {
+        subscribeChat(request, null, consumer, onComplete, onError);
+    }
+
+    /** 异步订阅 Chat Completion SSE 流式响应，携带自定义 headers（如 session key）。 */
+    public void subscribeChat(ChatRequest request,
+                              Map<String, String> headers,
                               Consumer<SseEvent> consumer,
                               Runnable onComplete,
                               Consumer<Throwable> onError) {
         stopCurrent();
         Subscription sub = new Subscription("hermes-sse-chat");
         activeSubscription.set(sub);
-        sub.executor.submit(() -> {
-            try {
-                String url = config.getServerUrl() + PATH_CHAT_COMPLETIONS;
-                HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
-                sub.connection = conn;
-                conn.setRequestMethod("POST");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(config.getConnectTimeoutMillis());
-                conn.setReadTimeout(0);
-                conn.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
-                conn.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
-                conn.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
-                String apiKey = config.resolveApiKey();
-                if (!apiKey.isEmpty()) conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
-                String body = mapper.writeValueAsString(request);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(body.getBytes(StandardCharsets.UTF_8));
-                }
-                int status = conn.getResponseCode();
-                if (status != 200) {
-                    String errBody = readErrorBody(conn);
-                    onError.accept(new RuntimeException("SSE chat failed: " + status + " " + errBody));
-                    return;
-                }
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-                    parseSseStream(reader, consumer, onComplete, sub);
-                }
-                onComplete.run();
-            } catch (Exception e) { log.warn("SSE chat error", e); onError.accept(e); }
-            finally { sub.executor.shutdown(); }
-        });
+        sub.executor.submit(() -> doSubscribeChat(request, headers, consumer, onComplete, onError, sub));
+    }
+
+    private void doSubscribeChat(ChatRequest request,
+                                 Map<String, String> headers,
+                                 Consumer<SseEvent> consumer,
+                                 Runnable onComplete,
+                                 Consumer<Throwable> onError,
+                                 Subscription sub) {
+        try {
+            String url = config.getServerUrl() + PATH_CHAT_COMPLETIONS;
+            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            sub.connection = conn;
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(config.getConnectTimeoutMillis());
+            conn.setReadTimeout(0);
+            conn.setRequestProperty(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON);
+            conn.setRequestProperty(HEADER_ACCEPT, MEDIA_TYPE_SSE);
+            conn.setRequestProperty(HEADER_CACHE_CONTROL, CACHE_NO_CACHE);
+            String apiKey = config.resolveApiKey();
+            if (!apiKey.isEmpty()) conn.setRequestProperty(HEADER_AUTHORIZATION, AUTH_BEARER_PREFIX + apiKey);
+            if (headers != null) headers.forEach((k, v) -> { if (v != null) conn.setRequestProperty(k, v); });
+            String body = mapper.writeValueAsString(request);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            int status = conn.getResponseCode();
+            if (status != 200) {
+                String errBody = readErrorBody(conn);
+                onError.accept(new RuntimeException("SSE chat failed: " + status + " " + errBody));
+                return;
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                parseSseStream(reader, consumer, onComplete, sub);
+            }
+            onComplete.run();
+        } catch (Exception e) { log.warn("SSE chat error", e); onError.accept(e); }
+        finally { sub.executor.shutdown(); }
     }
 
     /** 异步订阅 session 流式聊天。 */

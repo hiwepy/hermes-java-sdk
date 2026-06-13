@@ -8,13 +8,13 @@ import java.util.List;
 
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class ChatCompletionResponse {
+public class ChatResponse {
     private String id;
     private String object;
     private Long created;
     private String model;
     private List<Choice> choices;
-    private RunStatus.Usage usage;
+    private Usage usage;
 
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -31,5 +31,18 @@ public class ChatCompletionResponse {
             private String role;
             private String content;
         }
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Usage {
+        @JsonProperty("prompt_tokens")
+        private Long promptTokens;
+
+        @JsonProperty("completion_tokens")
+        private Long completionTokens;
+
+        @JsonProperty("total_tokens")
+        private Long totalTokens;
     }
 }

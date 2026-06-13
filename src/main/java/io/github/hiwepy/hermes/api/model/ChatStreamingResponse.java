@@ -1,6 +1,6 @@
-package io.github.hiwepy.hermes.api;
+package io.github.hiwepy.hermes.api.model;
 
-import io.github.hiwepy.hermes.api.model.SseEvent;
+import lombok.Getter;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -17,24 +17,27 @@ import java.util.function.Consumer;
  * String full = stream.get();  // blocks
  * }</pre>
  */
-public class StreamingResponse extends CompletableFuture<String> {
+public class ChatStreamingResponse extends CompletableFuture<String> {
 
     private final StringBuilder content = new StringBuilder();
     private Consumer<String> deltaConsumer;
+    @Getter
     private final BlockingQueue<SseEvent> eventQueue = new LinkedBlockingQueue<>();
 
-    public StreamingResponse onDelta(Consumer<String> deltaConsumer) {
+    public ChatStreamingResponse onDelta(Consumer<String> deltaConsumer) {
         this.deltaConsumer = deltaConsumer;
         return this;
     }
 
     /** Feed an SSE event into this stream. */
     public void accept(SseEvent event) {
-        eventQueue.offer(event);
-        String delta = event.getData();
+        eventQueue.add(event);
+        String delta = event.deltaText();
         if (delta != null) {
             content.append(delta);
-            if (deltaConsumer != null) deltaConsumer.accept(delta);
+            if (deltaConsumer != null) {
+                deltaConsumer.accept(delta);
+            }
         }
     }
 
@@ -50,5 +53,4 @@ public class StreamingResponse extends CompletableFuture<String> {
 
     public String getAccumulatedContent() { return content.toString(); }
 
-    public BlockingQueue<SseEvent> getEventQueue() { return eventQueue; }
 }

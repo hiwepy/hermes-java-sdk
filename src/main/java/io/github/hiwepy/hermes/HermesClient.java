@@ -5,7 +5,7 @@ import io.github.hiwepy.hermes.cli.HermesCli;
 import io.github.hiwepy.hermes.cli.HermesCliExecutor;
 import io.github.hiwepy.hermes.api.HermesHttpClient;
 import io.github.hiwepy.hermes.api.HermesSseClient;
-import io.github.hiwepy.hermes.api.StreamingResponse;
+import io.github.hiwepy.hermes.api.model.ChatStreamingResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -48,19 +48,20 @@ public class HermesClient implements AutoCloseable {
     // Chat Completions
     // ============================================================
 
-    public ChatCompletionResponse chatCompletion(ChatCompletionRequest request) {
+    public ChatResponse chatCompletion(ChatRequest request) {
         return httpClient.chatCompletion(request);
     }
 
     /** Chat completion with Hermes custom headers. */
-    public ChatCompletionResponse chatCompletion(ChatCompletionRequest request,
-                                                  Map<String, String> headers) {
+    public ChatResponse chatCompletion(ChatRequest request,
+                                       Map<String, String> headers) {
         return httpClient.chatCompletion(request, headers);
     }
 
     /** Convenience: chat with session key. */
-    public ChatCompletionResponse chatCompletionWithSession(
-            ChatCompletionRequest request, String sessionKey, String sessionId) {
+    public ChatResponse chatCompletionWithSession(ChatRequest request,
+                                                  String sessionKey,
+                                                  String sessionId) {
         return httpClient.chatCompletion(request,
                 HermesHttpClient.hermesHeaders(sessionKey, sessionId, null));
     }
@@ -105,15 +106,26 @@ public class HermesClient implements AutoCloseable {
     // ============================================================
 
     /**
-     * Streaming chat completion returning a {@link StreamingResponse} that accumulates
+     * Streaming chat completion returning a {@link ChatStreamingResponse} that accumulates
      * delta text and completes when the stream ends.
      */
-    public StreamingResponse chatCompletionStream(ChatCompletionRequest request) {
+    public ChatStreamingResponse chatCompletionStream(ChatRequest request) {
+        return chatCompletionStream(request, (Map<String, String>) null);
+    }
+
+    /** Streaming chat completion with Hermes custom headers. */
+    public ChatStreamingResponse chatCompletionStream(ChatRequest request,
+                                                      Map<String, String> headers) {
         request.setStream(true);
-        StreamingResponse stream = new StreamingResponse();
-        sseClient.subscribeChat(request, event -> stream.accept(event),
-                () -> stream.finish(), stream::fail);
+        ChatStreamingResponse stream = new ChatStreamingResponse();
+        sseClient.subscribeChat(request, headers, stream::accept, stream::finish, stream::fail);
         return stream;
+    }
+
+    /** Convenience: streaming chat with session key. */
+    public ChatStreamingResponse chatCompletionStreamWithSession(ChatRequest request, String sessionKey, String sessionId) {
+        return chatCompletionStream(request,
+                HermesHttpClient.hermesHeaders(sessionKey, sessionId, null));
     }
 
     // ============================================================
@@ -122,11 +134,15 @@ public class HermesClient implements AutoCloseable {
 
     public Session createSession(String title) { return httpClient.createSession(title); }
     public List<Session> listSessions() { return httpClient.listSessions(); }
+    /** 分页列出 sessions。 */
+    public List<Session> listSessions(Integer limit, Integer offset, String source, Boolean includeChildren) {
+        return httpClient.listSessions(limit, offset, source, includeChildren);
+    }
     public Session getSession(String sessionId) { return httpClient.getSession(sessionId); }
     public List<Map<String, Object>> getSessionMessages(String id) { return httpClient.getSessionMessages(id); }
     public Session forkSession(String id, String title) { return httpClient.forkSession(id, title); }
     public boolean deleteSession(String sessionId) { return httpClient.deleteSession(sessionId); }
-    public ChatCompletionResponse sessionChat(String sessionId, String input) {
+    public ChatResponse sessionChat(String sessionId, String input) {
         return httpClient.sessionChat(sessionId, input);
     }
 

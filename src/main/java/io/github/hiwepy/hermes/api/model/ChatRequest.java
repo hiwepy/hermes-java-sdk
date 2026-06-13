@@ -15,7 +15,7 @@ import java.util.Map;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ChatCompletionRequest {
+public class ChatRequest {
     private String model;
     private List<Message> messages;
     private Boolean stream;
@@ -45,8 +45,8 @@ public class ChatCompletionRequest {
     private String user;
 
     /** Convenience: returns a copy with stream=true. */
-    public ChatCompletionRequest withStream() {
-        ChatCompletionRequest r = new ChatCompletionRequest();
+    public ChatRequest withStream() {
+        ChatRequest r = new ChatRequest();
         r.model = this.model; r.messages = this.messages; r.stream = true;
         r.streamOptions = this.streamOptions; r.maxTokens = this.maxTokens;
         r.maxCompletionTokens = this.maxCompletionTokens; r.temperature = this.temperature;

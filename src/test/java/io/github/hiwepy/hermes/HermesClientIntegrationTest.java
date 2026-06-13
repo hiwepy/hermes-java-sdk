@@ -3,10 +3,8 @@ package io.github.hiwepy.hermes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.hiwepy.hermes.api.HermesApiConstants;
 import io.github.hiwepy.hermes.api.HermesHttpClient;
-import io.github.hiwepy.hermes.api.StreamingResponse;
+import io.github.hiwepy.hermes.api.model.ChatStreamingResponse;
 import io.github.hiwepy.hermes.api.model.*;
-import io.github.hiwepy.hermes.cli.HermesCli;
-import io.github.hiwepy.hermes.cli.HermesCliExecutor;
 import io.github.hiwepy.hermes.cli.HermesCliResult;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -122,14 +120,14 @@ class HermesClientIntegrationTest {
 
     @Test @Order(20)
     void chatCompletion() {
-        ChatCompletionRequest req = new ChatCompletionRequest();
+        ChatRequest req = new ChatRequest();
         req.setModel(client.getConfig().getDefaultModel());
         req.setMessages(java.util.Arrays.asList(msg("user", "Reply with exactly: OK")));
         req.setMaxTokens(10);
         req.setTemperature(0.0);
 
         try {
-            ChatCompletionResponse resp = client.chatCompletion(req);
+            ChatResponse resp = client.chatCompletion(req);
             assertNotNull(resp);
             assertNotNull(resp.getId());
             assertNotNull(resp.getChoices());
@@ -145,7 +143,7 @@ class HermesClientIntegrationTest {
 
     @Test @Order(21)
     void chatCompletionWithHeaders() {
-        ChatCompletionRequest req = new ChatCompletionRequest();
+        ChatRequest req = new ChatRequest();
         req.setModel(client.getConfig().getDefaultModel());
         req.setMessages(java.util.Arrays.asList(msg("user", "Reply with: OK")));
         req.setMaxTokens(10);
@@ -153,7 +151,7 @@ class HermesClientIntegrationTest {
         Map<String, String> headers = HermesHttpClient.hermesHeaders(
                 "agent:main:test", "test-session", null);
         try {
-            ChatCompletionResponse resp = client.chatCompletion(req, headers);
+            ChatResponse resp = client.chatCompletion(req, headers);
             assertNotNull(resp);
             assertNotNull(resp.getId());
         } catch (RuntimeException e) {
@@ -164,13 +162,13 @@ class HermesClientIntegrationTest {
 
     @Test @Order(22)
     void chatCompletionWithSession() {
-        ChatCompletionRequest req = new ChatCompletionRequest();
+        ChatRequest req = new ChatRequest();
         req.setModel(client.getConfig().getDefaultModel());
         req.setMessages(java.util.Arrays.asList(msg("user", "Reply with: OK")));
         req.setMaxTokens(10);
 
         try {
-            ChatCompletionResponse resp = client.chatCompletionWithSession(
+            ChatResponse resp = client.chatCompletionWithSession(
                     req, "agent:main:test-user-42", "transcript-1");
             assertNotNull(resp);
         } catch (RuntimeException e) {
@@ -181,7 +179,7 @@ class HermesClientIntegrationTest {
 
     @Test @Order(23)
     void chatCompletionRequestFields_preservedInJson() throws Exception {
-        ChatCompletionRequest req = new ChatCompletionRequest();
+        ChatRequest req = new ChatRequest();
         req.setModel("hermes-agent");
         req.setMessages(java.util.Arrays.asList(msg("system", "You are helpful."), msg("user", "Hi")));
         req.setStream(false);
@@ -297,13 +295,13 @@ class HermesClientIntegrationTest {
 
     @Test @Order(40)
     void chatCompletionStream() throws Exception {
-        ChatCompletionRequest req = new ChatCompletionRequest();
+        ChatRequest req = new ChatRequest();
         req.setModel(client.getConfig().getDefaultModel());
         req.setMessages(java.util.Arrays.asList(msg("user", "Count from 1 to 3")));
         req.setMaxTokens(50);
 
         try {
-            StreamingResponse stream = client.chatCompletionStream(req);
+            ChatStreamingResponse stream = client.chatCompletionStream(req);
             String full = stream.get();
             assertNotNull(full);
             // Content may be empty if model auth fails, but stream plumbing works
@@ -387,7 +385,7 @@ class HermesClientIntegrationTest {
     void sessionChat() {
         Session session = client.createSession("chat-" + System.currentTimeMillis());
         try {
-            ChatCompletionResponse resp = client.sessionChat(session.getId(), "Reply OK");
+            ChatResponse resp = client.sessionChat(session.getId(), "Reply OK");
             assertNotNull(resp);
             assertNotNull(resp.getChoices());
         } catch (RuntimeException e) {
@@ -491,8 +489,8 @@ class HermesClientIntegrationTest {
     // Helper
     // ============================================================
 
-    private static ChatCompletionRequest.Message msg(String role, String content) {
-        ChatCompletionRequest.Message m = new ChatCompletionRequest.Message();
+    private static ChatRequest.Message msg(String role, String content) {
+        ChatRequest.Message m = new ChatRequest.Message();
         m.setRole(role);
         m.setContent(content);
         return m;

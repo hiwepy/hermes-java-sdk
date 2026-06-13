@@ -87,6 +87,26 @@ public final class HermesApiConstants {
     public static final String EVENT_CHAT_COMPLETION_CHUNK = "chat.completion.chunk";
     public static final String EVENT_RESPONSE_CREATED = "response.created";
     public static final String EVENT_RESPONSE_OUTPUT_TEXT_DELTA = "response.output_text.delta";
+    public static final String EVENT_RESPONSE_OUTPUT_ITEM_ADDED = "response.output_item.added";
+    public static final String EVENT_RESPONSE_OUTPUT_ITEM_DONE = "response.output_item.done";
     public static final String EVENT_RESPONSE_COMPLETED = "response.completed";
     public static final String EVENT_RESPONSE_FAILED = "response.failed";
+
+    // ============================================================
+    // Session SSE event types
+    // ============================================================
+
+    public static final String EVENT_ASSISTANT_DELTA = "assistant.delta";
+    public static final String EVENT_TOOL_STARTED = "tool.started";
+    public static final String EVENT_TOOL_COMPLETED = "tool.completed";
+    public static final String EVENT_RUN_COMPLETED = "run.completed";
+
+    // ============================================================
+    // Response output item types
+    // ============================================================
+
+    public static final String OUTPUT_ITEM_MESSAGE = "message";
+    public static final String OUTPUT_ITEM_FUNCTION_CALL = "function_call";
+    public static final String OUTPUT_ITEM_FUNCTION_CALL_OUTPUT = "function_call_output";
+    public static final String OUTPUT_TEXT_TYPE = "output_text";
 }
