@@ -140,6 +140,13 @@ public class HermesClient implements AutoCloseable {
                 HermesHttpClient.hermesHeaders(sessionKey, sessionId, null));
     }
 
+    /**
+     * 按 sessionKey 流式 chat completion（2 参数版，对齐 OpenClaw/OpenCode）。
+     */
+    public ChatStreamingResponse chatCompletionStreamWithSession(ChatRequest request, String sessionKey) {
+        return chatCompletionStreamWithSession(request, sessionKey, null);
+    }
+
     // ============================================================
     // Session
     // ============================================================
