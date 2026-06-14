@@ -66,6 +66,18 @@ public class HermesClient implements AutoCloseable {
                 HermesHttpClient.hermesHeaders(sessionKey, sessionId, null));
     }
 
+    /**
+     * 按 sessionKey 发送消息并同步等待 AI 响应（2 参数版）。
+     * <p>与 OpenClaw/OpenCode 的 {@code chatCompletionWithSession(request, sessionKey)} 对称。</p>
+     *
+     * @param request    请求体
+     * @param sessionKey 会话路由 key
+     * @return Chat 响应
+     */
+    public ChatResponse chatCompletionWithSession(ChatRequest request, String sessionKey) {
+        return chatCompletionWithSession(request, sessionKey, null);
+    }
+
     // ============================================================
     // Responses API
     // ============================================================
